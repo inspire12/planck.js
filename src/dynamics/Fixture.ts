@@ -1,40 +1,28 @@
 /*
  * Planck.js
- * The MIT License
- * Copyright (c) 2021 Erin Catto, Ali Shakiba
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Copyright (c) Erin Catto, Ali Shakiba
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
  */
 
-import common from '../util/common';
-import options from '../util/options';
-import Math from '../common/Math';
-import Vec2 from '../common/Vec2';
-import AABB, { RayCastInput, RayCastOutput } from '../collision/AABB';
-import Shape, { ShapeType } from '../collision/Shape';
-import Body, { MassData } from "./Body";
-import BroadPhase from "../collision/BroadPhase";
-import Transform from "../common/Transform";
+import * as matrix from "../common/Matrix";
+import { options } from "../util/options";
+import { Vec2Value } from "../common/Vec2";
+import { AABB, RayCastInput, RayCastOutput } from "../collision/AABB";
+import { Shape, ShapeType } from "../collision/Shape";
+import { Body, MassData } from "./Body";
+import { BroadPhase } from "../collision/BroadPhase";
+import { TransformValue } from "../common/Transform";
+import { Style } from "../util/Testbed";
 
 
-const _ASSERT = typeof ASSERT === 'undefined' ? false : ASSERT;
+/** @internal */ const _ASSERT = typeof ASSERT === "undefined" ? false : ASSERT;
 
+/** @internal */ const synchronize_aabb1 = new AABB();
+/** @internal */ const synchronize_aabb2 = new AABB();
+/** @internal */ const displacement = matrix.vec2(0, 0);
 
 /**
  * A fixture definition is used to create a fixture. This class defines an
@@ -72,13 +60,16 @@ export interface FixtureOpt {
    * Collision category bit or bits that this fixture accept for collision.
    */
   filterMaskBits?: number;
+
+  /** Styling for dev-tools. */
+  style?: Style;
 }
 
 export interface FixtureDef extends FixtureOpt {
   shape: Shape;
 }
 
-const FixtureDefDefault: FixtureOpt = {
+/** @internal */ const FixtureDefDefault: FixtureOpt = {
   userData : null,
   friction : 0.2,
   restitution : 0.0,
@@ -102,7 +93,7 @@ export class FixtureProxy {
     this.aabb = new AABB();
     this.fixture = fixture;
     this.childIndex = childIndex;
-    this.proxyId;
+    // this.proxyId;
   }
 }
 
@@ -113,7 +104,7 @@ export class FixtureProxy {
  *
  * To create a new Fixture use {@link Body.createFixture}.
  */
-export default class Fixture {
+export class Fixture {
   /** @internal */ m_body: Body;
   /** @internal */ m_friction: number;
   /** @internal */ m_restitution: number;
@@ -125,19 +116,26 @@ export default class Fixture {
   /** @internal */ m_shape: Shape;
   /** @internal */ m_next: Fixture | null;
   /** @internal */ m_proxies: FixtureProxy[];
+  // 0 indicates inactive state, this is not the same as m_proxies.length
   /** @internal */ m_proxyCount: number;
   /** @internal */ m_userData: unknown;
+
+  /** Styling for dev-tools. */
+  style: Style = {};
+
+  /** @hidden @experimental Similar to userData, but used by dev-tools or runtime environment. */
+  appData: Record<string, any> = {};
 
   constructor(body: Body, def: FixtureDef);
   constructor(body: Body, shape: Shape, def?: FixtureOpt);
   constructor(body: Body, shape: Shape, density?: number);
-  // tslint:disable-next-line:typedef
-  /** @internal */ constructor(body: Body, shape?, def?) {
+  /** @internal */
+  constructor(body: Body, shape?, def?) {
     if (shape.shape) {
       def = shape;
       shape = shape.shape;
 
-    } else if (typeof def === 'number') {
+    } else if (typeof def === "number") {
       def = {density : def};
     }
 
@@ -162,18 +160,21 @@ export default class Fixture {
     this.m_proxies = [];
     this.m_proxyCount = 0;
 
+    // fixture proxies are created here,
+    // but they are activate in when a fixture is added to body
     const childCount = this.m_shape.getChildCount();
     for (let i = 0; i < childCount; ++i) {
       this.m_proxies[i] = new FixtureProxy(this, i);
     }
 
     this.m_userData = def.userData;
+
+    if (typeof def.style === "object" && def.style !== null) {
+      this.style = def.style;
+    }
   }
 
-  /**
-   * Re-setup fixture.
-   * @internal
-   */
+  /** @hidden Re-setup fixture. */
   _reset(): void {
     const body = this.getBody();
     const broadPhase = body.m_world.m_broadPhase;
@@ -217,7 +218,7 @@ export default class Fixture {
    * concrete shape.
    */
   getType(): ShapeType {
-    return this.m_shape.getType();
+    return this.m_shape.m_type;
   }
 
   /**
@@ -296,7 +297,7 @@ export default class Fixture {
    * mass of the body. You must call Body.resetMassData to update the body's mass.
    */
   setDensity(density: number): void {
-    _ASSERT && common.assert(Math.isFinite(density) && density >= 0.0);
+    if (_ASSERT) console.assert(Number.isFinite(density) && density >= 0.0);
     this.m_density = density;
   }
 
@@ -333,7 +334,7 @@ export default class Fixture {
   /**
    * Test a point in world coordinates for containment in this fixture.
    */
-  testPoint(p: Vec2): boolean {
+  testPoint(p: Vec2Value): boolean {
     return this.m_shape.testPoint(this.m_body.getTransform(), p);
   }
 
@@ -358,15 +359,15 @@ export default class Fixture {
    * more accurate AABB, compute it using the shape and the body transform.
    */
   getAABB(childIndex: number): AABB {
-    _ASSERT && common.assert(0 <= childIndex && childIndex < this.m_proxyCount);
+    if (_ASSERT) console.assert(0 <= childIndex && childIndex < this.m_proxies.length);
     return this.m_proxies[childIndex].aabb;
   }
 
   /**
    * These support body activation/deactivation.
    */
-  createProxies(broadPhase: BroadPhase, xf: Transform): void {
-    _ASSERT && common.assert(this.m_proxyCount == 0);
+  createProxies(broadPhase: BroadPhase, xf: TransformValue): void {
+    if (_ASSERT) console.assert(this.m_proxyCount == 0);
 
     // Create proxies in the broad-phase.
     this.m_proxyCount = this.m_shape.getChildCount();
@@ -393,19 +394,17 @@ export default class Fixture {
    * Updates this fixture proxy in broad-phase (with combined AABB of current and
    * next transformation).
    */
-  synchronize(broadPhase: BroadPhase, xf1: Transform, xf2: Transform): void {
+  synchronize(broadPhase: BroadPhase, xf1: TransformValue, xf2: TransformValue): void {
     for (let i = 0; i < this.m_proxyCount; ++i) {
       const proxy = this.m_proxies[i];
       // Compute an AABB that covers the swept shape (may miss some rotation
       // effect).
-      const aabb1 = new AABB();
-      const aabb2 = new AABB();
-      this.m_shape.computeAABB(aabb1, xf1, proxy.childIndex);
-      this.m_shape.computeAABB(aabb2, xf2, proxy.childIndex);
+      this.m_shape.computeAABB(synchronize_aabb1, xf1, proxy.childIndex);
+      this.m_shape.computeAABB(synchronize_aabb2, xf2, proxy.childIndex);
 
-      proxy.aabb.combine(aabb1, aabb2);
+      proxy.aabb.combine(synchronize_aabb1, synchronize_aabb2);
 
-      const displacement = Vec2.sub(xf2.p, xf1.p);
+      matrix.subVec2(displacement, xf2.p, xf1.p);
 
       broadPhase.moveProxy(proxy.proxyId, proxy.aabb, displacement);
     }
@@ -429,6 +428,7 @@ export default class Fixture {
 
   setFilterGroupIndex(groupIndex: number): void {
     this.m_filterGroupIndex = groupIndex;
+    this.refilter();
   }
 
   getFilterCategoryBits(): number {
@@ -437,6 +437,7 @@ export default class Fixture {
 
   setFilterCategoryBits(categoryBits: number): void {
     this.m_filterCategoryBits = categoryBits;
+    this.refilter();
   }
 
   getFilterMaskBits(): number {
@@ -445,6 +446,7 @@ export default class Fixture {
 
   setFilterMaskBits(maskBits: number): void {
     this.m_filterMaskBits = maskBits;
+    this.refilter();
   }
 
   /**

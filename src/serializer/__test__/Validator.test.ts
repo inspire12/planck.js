@@ -1,36 +1,37 @@
-import { expect } from 'chai';
+/* eslint-disable @typescript-eslint/no-unused-expressions */
+import Ajv from "ajv";
+import { describe, it, expect } from "vitest";
 
-import * as Ajv from 'ajv';
+import { Vec2 } from "../../common/Vec2";
+import { CircleShape } from"../../collision/shape/CircleShape";
+import { BoxShape } from "../../collision/shape/BoxShape";
+import { DistanceJoint } from "../../dynamics/joint/DistanceJoint";
+import { World } from "../../dynamics/World";
 
-import Vec2 from '../../common/Vec2';
-import Circle from '../../collision/shape/CircleShape';
-import Box from '../../collision/shape/BoxShape';
-import DistanceJoint from '../../dynamics/joint/DistanceJoint';
-import World from '../../dynamics/World';
+import { Serializer } from "..";
 
-import Serializer from '../';
-const schema = require('../schema.json');
+import schema from "../schema.json";
 
-describe('Serializer', function(): void {
+describe("Serializer", function() {
   var ajv = new Ajv();
   var validate = ajv.compile(schema);
 
-  it('produces valid schema', function(): void {
+  it("produces valid schema", function() {
     var world = new World();
 
-    var circle = new Circle(1);
-    var box = new Box(1, 1);
+    var circle = new CircleShape(1);
+    var box = new BoxShape(1, 1);
 
     var b1 = world.createBody({
       position : new Vec2(0, 0),
-      type : 'dynamic'
+      type : "dynamic"
     });
 
     b1.createFixture(circle);
 
     var b2 = world.createBody({
       position : new Vec2(2, 0),
-      type : 'dynamic'
+      type : "dynamic"
     });
     b2.createFixture(box);
 
@@ -43,7 +44,7 @@ describe('Serializer', function(): void {
 
     var json = Serializer.toJson(world);
 
-    // console.log(JSON.stringify(json, null, ' '));
+    // console.log(JSON.stringify(json, null, " "));
 
     var valid = validate(json);
     console.log(valid || validate.errors);

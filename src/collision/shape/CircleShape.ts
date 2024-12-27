@@ -1,52 +1,52 @@
 /*
  * Planck.js
- * The MIT License
- * Copyright (c) 2021 Erin Catto, Ali Shakiba
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Copyright (c) Erin Catto, Ali Shakiba
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
  */
 
-import common from '../../util/common';
-import Math from '../../common/Math';
-import Rot from '../../common/Rot';
-import Vec2 from '../../common/Vec2';
-import Shape from '../Shape';
-import AABB, { RayCastInput, RayCastOutput } from '../AABB';
-import Transform from '../../common/Transform';
-import { MassData } from '../../dynamics/Body';
-import { DistanceProxy } from '../Distance';
+import * as matrix from "../../common/Matrix";
+import { EPSILON } from "../../common/Math";
+import { Rot } from "../../common/Rot";
+import { Vec2, Vec2Value } from "../../common/Vec2";
+import { Shape } from "../Shape";
+import { AABBValue, RayCastInput, RayCastOutput } from "../AABB";
+import { Transform, TransformValue } from "../../common/Transform";
+import { MassData } from "../../dynamics/Body";
+import { DistanceProxy } from "../Distance";
 
 
-const _ASSERT = typeof ASSERT === 'undefined' ? false : ASSERT;
+/** @internal */ const _CONSTRUCTOR_FACTORY = typeof CONSTRUCTOR_FACTORY === "undefined" ? false : CONSTRUCTOR_FACTORY;
+/** @internal */ const math_sqrt = Math.sqrt;
+/** @internal */ const math_PI = Math.PI;
 
+/** @internal */ const temp = matrix.vec2(0, 0);
 
-export default class CircleShape extends Shape {
-  static TYPE = 'circle' as const;
+declare module "./CircleShape" {
+  /** @hidden @deprecated Use new keyword. */
+  // @ts-expect-error
+  function CircleShape(position: Vec2Value, radius?: number): CircleShape;
+  /** @hidden @deprecated Use new keyword. */
+  // @ts-expect-error
+  function CircleShape(radius?: number): CircleShape;
+}
 
-  m_p: Vec2;
+/** Circle shape. */
+// @ts-expect-error
+export class CircleShape extends Shape {
+  static TYPE = "circle" as const;
+  /** @hidden */ m_type: "circle";
 
-  constructor(position: Vec2, radius?: number);
+  /** @hidden */ m_p: Vec2;
+  /** @hidden */ m_radius: number;
+
+  constructor(position: Vec2Value, radius?: number);
   constructor(radius?: number);
-  // tslint:disable-next-line:typedef
-  constructor(a, b?) {
+  constructor(a: any, b?: any) {
     // @ts-ignore
-    if (!(this instanceof CircleShape)) {
+    if (_CONSTRUCTOR_FACTORY && !(this instanceof CircleShape)) {
       return new CircleShape(a, b);
     }
 
@@ -56,14 +56,14 @@ export default class CircleShape extends Shape {
     this.m_p = Vec2.zero();
     this.m_radius = 1;
 
-    if (typeof a === 'object' && Vec2.isValid(a)) {
+    if (typeof a === "object" && Vec2.isValid(a)) {
       this.m_p.setVec2(a);
 
-      if (typeof b === 'number') {
+      if (typeof b === "number") {
         this.m_radius = b;
       }
 
-    } else if (typeof a === 'number') {
+    } else if (typeof a === "number") {
       this.m_radius = a;
     }
   }
@@ -83,7 +83,15 @@ export default class CircleShape extends Shape {
     return new CircleShape(data.p, data.radius);
   }
 
-  // TODO: already defined in Shape
+  /** @hidden */
+  _reset(): void {
+    // noop
+  }
+
+  getType(): "circle" {
+    return this.m_type;
+  }
+
   getRadius(): number {
     return this.m_radius;
   }
@@ -92,14 +100,8 @@ export default class CircleShape extends Shape {
     return this.m_p;
   }
 
-  getVertex(index: 0): Vec2 {
-    _ASSERT && common.assert(index == 0);
-    return this.m_p;
-  }
-
   /**
-   * @internal
-   * @deprecated Shapes should be treated as immutable.
+   * @internal @deprecated Shapes should be treated as immutable.
    *
    * clone the concrete shape.
    */
@@ -125,10 +127,9 @@ export default class CircleShape extends Shape {
    * @param xf The shape world transform.
    * @param p A point in world coordinates.
    */
-  testPoint(xf: Transform, p: Vec2): boolean {
-    const center = Vec2.add(xf.p, Rot.mulVec2(xf.q, this.m_p));
-    const d = Vec2.sub(p, center);
-    return Vec2.dot(d, d) <= this.m_radius * this.m_radius;
+  testPoint(xf: TransformValue, p: Vec2Value): boolean {
+    const center = matrix.transformVec2(temp, xf, this.m_p);
+    return matrix.distSqrVec2(p, center) <= this.m_radius * this.m_radius;
   }
 
   /**
@@ -156,12 +157,12 @@ export default class CircleShape extends Shape {
     const sigma = c * c - rr * b;
 
     // Check for negative discriminant and short segment.
-    if (sigma < 0.0 || rr < Math.EPSILON) {
+    if (sigma < 0.0 || rr < EPSILON) {
       return false;
     }
 
     // Find the point of intersection of the line with the circle.
-    let a = -(c + Math.sqrt(sigma));
+    let a = -(c + math_sqrt(sigma));
 
     // Is the intersection point on the segment?
     if (0.0 <= a && a <= input.maxFraction * rr) {
@@ -183,10 +184,11 @@ export default class CircleShape extends Shape {
    * @param xf The world transform of the shape.
    * @param childIndex The child shape
    */
-  computeAABB(aabb: AABB, xf: Transform, childIndex: number): void {
-    const p = Vec2.add(xf.p, Rot.mulVec2(xf.q, this.m_p));
-    aabb.lowerBound.setNum(p.x - this.m_radius, p.y - this.m_radius);
-    aabb.upperBound.setNum(p.x + this.m_radius, p.y + this.m_radius);
+  computeAABB(aabb: AABBValue, xf: TransformValue, childIndex: number): void {
+    const p = matrix.transformVec2(temp, xf, this.m_p);
+
+    matrix.setVec2(aabb.lowerBound, p.x - this.m_radius, p.y - this.m_radius);
+    matrix.setVec2(aabb.upperBound, p.x + this.m_radius, p.y + this.m_radius);
   }
 
   /**
@@ -197,17 +199,18 @@ export default class CircleShape extends Shape {
    * @param density The density in kilograms per meter squared.
    */
   computeMass(massData: MassData, density: number): void {
-    massData.mass = density * Math.PI * this.m_radius * this.m_radius;
-    massData.center = this.m_p;
+    massData.mass = density * math_PI * this.m_radius * this.m_radius;
+    matrix.copyVec2(massData.center, this.m_p);
     // inertia about the local origin
-    massData.I = massData.mass
-        * (0.5 * this.m_radius * this.m_radius + Vec2.dot(this.m_p, this.m_p));
+    massData.I = massData.mass * (0.5 * this.m_radius * this.m_radius + matrix.lengthSqrVec2(this.m_p));
   }
 
   computeDistanceProxy(proxy: DistanceProxy): void {
-    proxy.m_vertices.push(this.m_p);
+    proxy.m_vertices[0] = this.m_p;
+    proxy.m_vertices.length = 1;
     proxy.m_count = 1;
     proxy.m_radius = this.m_radius;
   }
-
 }
+
+export const Circle = CircleShape;

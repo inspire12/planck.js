@@ -1,58 +1,61 @@
 /*
  * Planck.js
- * The MIT License
- * Copyright (c) 2021 Erin Catto, Ali Shakiba
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Copyright (c) Erin Catto, Ali Shakiba
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
  */
 
-import Settings from '../../Settings';
-import Shape from '../Shape';
-import Transform from '../../common/Transform';
-import Rot from '../../common/Rot';
-import Vec2 from '../../common/Vec2';
-import AABB, { RayCastInput, RayCastOutput } from '../AABB';
-import { MassData } from '../../dynamics/Body';
-import { DistanceProxy } from '../Distance';
+import { SettingsInternal as Settings } from "../../Settings";
+import * as matrix from "../../common/Matrix";
+import { Shape } from "../Shape";
+import { Transform, TransformValue } from "../../common/Transform";
+import { Rot } from "../../common/Rot";
+import { Vec2, Vec2Value } from "../../common/Vec2";
+import { AABB, AABBValue, RayCastInput, RayCastOutput } from "../AABB";
+import { MassData } from "../../dynamics/Body";
+import { DistanceProxy } from "../Distance";
+
+
+/** @internal */ const _CONSTRUCTOR_FACTORY = typeof CONSTRUCTOR_FACTORY === "undefined" ? false : CONSTRUCTOR_FACTORY;
+
+
+/** @internal */ const v1 = matrix.vec2(0, 0);
+/** @internal */ const v2 = matrix.vec2(0, 0);
+
+declare module "./EdgeShape" {
+  /** @hidden @deprecated Use new keyword. */
+  // @ts-expect-error
+  function EdgeShape(v1?: Vec2Value, v2?: Vec2Value): EdgeShape;
+}
 
 /**
  * A line segment (edge) shape. These can be connected in chains or loops to
  * other edge shapes. The connectivity information is used to ensure correct
  * contact normals.
  */
-export default class EdgeShape extends Shape {
-  static TYPE = 'edge' as const;
+// @ts-expect-error
+export class EdgeShape extends Shape {
+  static TYPE = "edge" as const;
+  /** @hidden */ m_type: "edge";
+
+  /** @hidden */ m_radius: number;
 
   // These are the edge vertices
-  m_vertex1: Vec2;
-  m_vertex2: Vec2;
+  /** @hidden */ m_vertex1: Vec2;
+  /** @hidden */ m_vertex2: Vec2;
 
   // Optional adjacent vertices. These are used for smooth collision.
   // Used by chain shape.
-  m_vertex0: Vec2;
-  m_vertex3: Vec2;
-  m_hasVertex0: boolean;
-  m_hasVertex3: boolean;
+  /** @hidden */ m_vertex0: Vec2;
+  /** @hidden */ m_vertex3: Vec2;
+  /** @hidden */ m_hasVertex0: boolean;
+  /** @hidden */ m_hasVertex3: boolean;
 
-  constructor(v1?: Vec2, v2?: Vec2) {
+  constructor(v1?: Vec2Value, v2?: Vec2Value) {
     // @ts-ignore
-    if (!(this instanceof EdgeShape)) {
+    if (_CONSTRUCTOR_FACTORY && !(this instanceof EdgeShape)) {
       return new EdgeShape(v1, v2);
     }
 
@@ -60,7 +63,6 @@ export default class EdgeShape extends Shape {
 
     this.m_type = EdgeShape.TYPE;
     this.m_radius = Settings.polygonRadius;
-
 
     this.m_vertex1 = v1 ? Vec2.clone(v1) : Vec2.zero();
     this.m_vertex2 = v2 ? Vec2.clone(v2) : Vec2.zero();
@@ -98,15 +100,28 @@ export default class EdgeShape extends Shape {
     return shape;
   }
 
+  /** @hidden */
+  _reset(): void {
+    // noop
+  }
+
+  getRadius(): number {
+    return this.m_radius;
+  }
+
+  getType(): "edge" {
+    return this.m_type;
+  }
+
   /** @internal @deprecated */
-  setNext(v?: Vec2): EdgeShape {
+  setNext(v?: Vec2Value): EdgeShape {
     return this.setNextVertex(v);
   }
 
   /**
    * Optional next vertex, used for smooth collision.
    */
-  setNextVertex(v?: Vec2): EdgeShape {
+  setNextVertex(v?: Vec2Value): EdgeShape {
     if (v) {
       this.m_vertex3.setVec2(v);
       this.m_hasVertex3 = true;
@@ -125,14 +140,14 @@ export default class EdgeShape extends Shape {
   }
 
   /** @internal @deprecated */
-  setPrev(v?: Vec2): EdgeShape {
+  setPrev(v?: Vec2Value): EdgeShape {
     return this.setPrevVertex(v);
   }
 
   /**
    * Optional prev vertex, used for smooth collision.
    */
-  setPrevVertex(v?: Vec2): EdgeShape {
+  setPrevVertex(v?: Vec2Value): EdgeShape {
     if (v) {
       this.m_vertex0.setVec2(v);
       this.m_hasVertex0 = true;
@@ -153,7 +168,7 @@ export default class EdgeShape extends Shape {
   /**
    * Set this as an isolated edge.
    */
-  _set(v1: Vec2, v2: Vec2): EdgeShape {
+  _set(v1: Vec2Value, v2: Vec2Value): EdgeShape {
     this.m_vertex1.setVec2(v1);
     this.m_vertex2.setVec2(v2);
     this.m_hasVertex0 = false;
@@ -162,8 +177,7 @@ export default class EdgeShape extends Shape {
   }
 
   /**
-   * @internal
-   * @deprecated Shapes should be treated as immutable.
+   * @internal @deprecated Shapes should be treated as immutable.
    *
    * clone the concrete shape.
    */
@@ -194,7 +208,7 @@ export default class EdgeShape extends Shape {
    * @param xf The shape world transform.
    * @param p A point in world coordinates.
    */
-  testPoint(xf: Transform, p: Vec2): false {
+  testPoint(xf: TransformValue, p: Vec2Value): false {
     return false;
   }
 
@@ -272,12 +286,12 @@ export default class EdgeShape extends Shape {
    * @param xf The world transform of the shape.
    * @param childIndex The child shape
    */
-  computeAABB(aabb: AABB, xf: Transform, childIndex: number): void {
-    const v1 = Transform.mulVec2(xf, this.m_vertex1);
-    const v2 = Transform.mulVec2(xf, this.m_vertex2);
+  computeAABB(aabb: AABBValue, xf: TransformValue, childIndex: number): void {
+    matrix.transformVec2(v1, xf, this.m_vertex1);
+    matrix.transformVec2(v2, xf, this.m_vertex2);
 
-    aabb.combinePoints(v1, v2);
-    aabb.extend(this.m_radius);
+    AABB.combinePoints(aabb, v1, v2);
+    AABB.extend(aabb, this.m_radius);
   }
 
   /**
@@ -289,15 +303,17 @@ export default class EdgeShape extends Shape {
    */
   computeMass(massData: MassData, density?: number): void {
     massData.mass = 0.0;
-    massData.center.setCombine(0.5, this.m_vertex1, 0.5, this.m_vertex2);
+    matrix.combine2Vec2(massData.center, 0.5, this.m_vertex1, 0.5, this.m_vertex2);
     massData.I = 0.0;
   }
 
   computeDistanceProxy(proxy: DistanceProxy): void {
-    proxy.m_vertices.push(this.m_vertex1);
-    proxy.m_vertices.push(this.m_vertex2);
+    proxy.m_vertices[0] = this.m_vertex1;
+    proxy.m_vertices[1] = this.m_vertex2;
+    proxy.m_vertices.length = 2;
     proxy.m_count = 2;
     proxy.m_radius = this.m_radius;
   }
-
 }
+
+export const Edge = EdgeShape;
