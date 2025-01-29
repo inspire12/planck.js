@@ -1,65 +1,55 @@
 /*
  * Planck.js
- * The MIT License
- * Copyright (c) 2021 Erin Catto, Ali Shakiba
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Copyright (c) Erin Catto, Ali Shakiba
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
  */
 
-import options from '../util/options';
-import common from '../util/common';
-import Vec2 from '../common/Vec2';
-import BroadPhase from '../collision/BroadPhase';
-import Solver, { ContactImpulse, TimeStep } from './Solver';
-import Body, { BodyDef } from './Body';
-import Joint from './Joint';
-import Contact from './Contact';
-import AABB, { RayCastInput, RayCastOutput } from "../collision/AABB";
-import Fixture, { FixtureProxy } from "./Fixture";
-import Manifold from "../collision/Manifold";
+import { options } from "../util/options";
+import { Vec2, Vec2Value } from "../common/Vec2";
+import { BroadPhase } from "../collision/BroadPhase";
+import { Solver, ContactImpulse, TimeStep } from "./Solver";
+import { Body, BodyDef } from "./Body";
+import { Joint } from "./Joint";
+import { Contact } from "./Contact";
+import { AABBValue, RayCastInput, RayCastOutput } from "../collision/AABB";
+import { Fixture, FixtureProxy } from "./Fixture";
+import { Manifold } from "../collision/Manifold";
 
 
-const _ASSERT = typeof ASSERT === 'undefined' ? false : ASSERT;
+/** @internal */ const _ASSERT = typeof ASSERT === "undefined" ? false : ASSERT;
+/** @internal */ const _CONSTRUCTOR_FACTORY = typeof CONSTRUCTOR_FACTORY === "undefined" ? false : CONSTRUCTOR_FACTORY;
 
 
-/**
- * @prop gravity [{ x : 0, y : 0}]
- * @prop allowSleep [true]
- * @prop warmStarting [true]
- * @prop continuousPhysics [true]
- * @prop subStepping [false]
- * @prop blockSolve [true]
- * @prop velocityIterations [8] For the velocity constraint solver.
- * @prop positionIterations [3] For the position constraint solver.
- */
 export interface WorldDef {
-  gravity?: Vec2;
+  /** [default: { x : 0, y : 0}] */
+  gravity?: Vec2Value;
+
+  /** [default: true] */
   allowSleep?: boolean;
+
+  /** [default: true] */
   warmStarting?: boolean;
+
+  /** [default: true] */
   continuousPhysics?: boolean;
+
+  /** [default: false] */
   subStepping?: boolean;
+
+  /** [default: true] */
   blockSolve?: boolean;
+
+  /** @internal [8] For the velocity constraint solver. */
   velocityIterations?: number;
+
+  /** @internal [3] For the position constraint solver. */
   positionIterations?: number;
 }
 
-const WorldDefDefault: WorldDef = {
+/** @internal */ const DEFAULTS: WorldDef = {
   gravity : Vec2.zero(),
   allowSleep : true,
   warmStarting : true,
@@ -73,17 +63,21 @@ const WorldDefDefault: WorldDef = {
 /**
  * Callback function for ray casts, see {@link World.rayCast}.
  *
- * Called for each fixture found in the query. You control how the ray cast
- * proceeds by returning a float: return -1: ignore this fixture and continue
- * return 0: terminate the ray cast return fraction: clip the ray to this point
- * return 1: don't clip the ray and continue
+ * Called for each fixture found in the query.
+ * The returned value replaces the ray-cast input maxFraction.
+ * You control how the ray cast proceeds by returning a numeric/float value.
+ * 
+ * - `0` to terminate the ray cast
+ * - `fraction` to clip the ray cast at current point
+ * - `1` don't clip the ray and continue
+ * - `-1` (or anything else) to continue
  *
  * @param fixture The fixture hit by the ray
  * @param point The point of initial intersection
  * @param normal The normal vector at the point of intersection
- * @param fraction
+ * @param fraction The fraction along the ray at the point of intersection
  *
- * @return -1 to filter, 0 to terminate, fraction to clip the ray for closest hit, 1 to continue
+ * @returns A number to update the maxFraction
  */
 export type WorldRayCastCallback = (fixture: Fixture, point: Vec2, normal: Vec2, fraction: number) => number;
 
@@ -92,7 +86,26 @@ export type WorldRayCastCallback = (fixture: Fixture, point: Vec2, normal: Vec2,
  */
 export type WorldAABBQueryCallback = (fixture: Fixture) => boolean;
 
-export default class World {
+declare module "./World" {
+  /** @hidden @deprecated Use new keyword. */
+  // @ts-expect-error
+  function World(deg: WorldDef): World;
+  /** @hidden @deprecated Use new keyword. */
+  // @ts-expect-error
+  function World(gravity: Vec2): World;
+  /** @hidden @deprecated Use new keyword. */
+  // @ts-expect-error
+  function World(): World;
+}
+
+/**
+ * The `World` class contains the bodies and joints. It manages all aspects
+ * of the simulation and allows for asynchronous queries (like AABB queries
+ * and ray-casts). Much of your interactions with Planck.js will be with a
+ * World object.
+ */
+// @ts-expect-error
+export class World {
   /** @internal */ m_solver: Solver;
   /** @internal */ m_broadPhase: BroadPhase;
   /** @internal */ m_contactList: Contact | null;
@@ -115,6 +128,8 @@ export default class World {
   /** @internal */ m_positionIterations: number;
   /** @internal */ m_t: number;
 
+  /** @internal */ m_step_callback: ((world: World) => unknown)[];
+
   // TODO
   /** @internal */ _listeners: {
     [key: string]: any[]
@@ -123,19 +138,21 @@ export default class World {
   /**
    * @param def World definition or gravity vector.
    */
-  constructor(def?: WorldDef | Vec2 | null) {
-    if (!(this instanceof World)) {
+  constructor(def?: WorldDef | Vec2Value) {
+    if (_CONSTRUCTOR_FACTORY && !(this instanceof World)) {
       return new World(def);
     }
 
     this.s_step = new TimeStep();
 
 
-    if (def && Vec2.isValid(def)) {
+    if (!def) {
+      def = {};
+    } else if (Vec2.isValid(def)) {
       def = { gravity: def as Vec2 };
     }
 
-    def = options(def, WorldDefDefault) as WorldDef;
+    def = options(def, DEFAULTS) as WorldDef;
 
     this.m_solver = new Solver(this);
 
@@ -169,6 +186,8 @@ export default class World {
     this.m_positionIterations = def.positionIterations;
 
     this.m_t = 0;
+
+    this.m_step_callback = [];
   }
 
   /** @internal */
@@ -182,7 +201,7 @@ export default class World {
 
     for (let j = this.getJointList(); j; j = j.getNext()) {
       // @ts-ignore
-      if (typeof j._serialize === 'function') {
+      if (typeof j._serialize === "function") {
         joints.push(j);
       }
     }
@@ -269,8 +288,8 @@ export default class World {
   /**
    * Change the global gravity vector.
    */
-  setGravity(gravity: Vec2): void {
-    this.m_gravity = gravity;
+  setGravity(gravity: Vec2Value): void {
+    this.m_gravity.set(gravity);
   }
 
   /**
@@ -378,8 +397,8 @@ export default class World {
    * @param aabb The query box.
    * @param callback Called for each fixture found in the query AABB. It may return `false` to terminate the query.
    */
-  queryAABB(aabb: AABB, callback: WorldAABBQueryCallback): void {
-    _ASSERT && common.assert(typeof callback === 'function');
+  queryAABB(aabb: AABBValue, callback: WorldAABBQueryCallback): void {
+    if (_ASSERT) console.assert(typeof callback === "function");
     const broadPhase = this.m_broadPhase;
     this.m_broadPhase.query(aabb, function(proxyId: number): boolean { // TODO GC
       const proxy = broadPhase.getUserData(proxyId);
@@ -394,10 +413,10 @@ export default class World {
    *
    * @param point1 The ray starting point
    * @param point2 The ray ending point
-   * @param callback A user implemented callback function.
+   * @param callback A function that is called for each fixture that is hit by the ray. You control how the ray cast proceeds by returning a numeric/float value.
    */
-  rayCast(point1: Vec2, point2: Vec2, callback: WorldRayCastCallback): void {
-    _ASSERT && common.assert(typeof callback === 'function');
+  rayCast(point1: Vec2Value, point2: Vec2Value, callback: WorldRayCastCallback): void {
+    if (_ASSERT) console.assert(typeof callback === "function");
     const broadPhase = this.m_broadPhase;
 
     this.m_broadPhase.rayCast({
@@ -454,10 +473,12 @@ export default class World {
    * position -= newOrigin
    *
    * @param newOrigin The new origin with respect to the old origin
+   * 
+   * Warning: This function is locked when a world simulation step is in progress. Use queueUpdate to schedule a function to be called after the step.
    */
-  shiftOrigin(newOrigin: Vec2): void {
-    _ASSERT && common.assert(this.m_locked == false);
-    if (this.m_locked) {
+  shiftOrigin(newOrigin: Vec2Value): void {
+    if (_ASSERT) console.assert(this.isLocked() == false);
+    if (this.isLocked()) {
       return;
     }
 
@@ -474,11 +495,9 @@ export default class World {
     this.m_broadPhase.shiftOrigin(newOrigin);
   }
 
-  /**
-   * @internal Used for deserialize.
-   */
+  /** @internal Used for deserialize. */
   _addBody(body: Body): void {
-    _ASSERT && common.assert(this.isLocked() === false);
+    if (_ASSERT) console.assert(this.isLocked() === false);
     if (this.isLocked()) {
       return;
     }
@@ -497,13 +516,13 @@ export default class World {
    * Create a rigid body given a definition. No reference to the definition is
    * retained.
    *
-   * Warning: This function is locked during callbacks.
+   * Warning: This function is locked when a world simulation step is in progress. Use queueUpdate to schedule a function to be called after the step.
    */
   createBody(def?: BodyDef): Body;
-  createBody(position: Vec2, angle?: number): Body;
+  createBody(position: Vec2Value, angle?: number): Body;
   // tslint:disable-next-line:typedef
   createBody(arg1?, arg2?) {
-    _ASSERT && common.assert(this.isLocked() == false);
+    if (_ASSERT) console.assert(this.isLocked() == false);
     if (this.isLocked()) {
       return null;
     }
@@ -512,7 +531,7 @@ export default class World {
     if (!arg1) {
     } else if (Vec2.isValid(arg1)) {
       def = { position : arg1, angle: arg2 };
-    } else if (typeof arg1 === 'object') {
+    } else if (typeof arg1 === "object") {
       def = arg1;
     }
 
@@ -522,46 +541,45 @@ export default class World {
   }
 
   createDynamicBody(def?: BodyDef): Body;
-  createDynamicBody(position: Vec2, angle?: number): Body;
+  createDynamicBody(position: Vec2Value, angle?: number): Body;
   // tslint:disable-next-line:typedef
   createDynamicBody(arg1?, arg2?) {
     let def: BodyDef = {};
     if (!arg1) {
     } else if (Vec2.isValid(arg1)) {
       def = { position : arg1, angle: arg2 };
-    } else if (typeof arg1 === 'object') {
+    } else if (typeof arg1 === "object") {
       def = arg1;
     }
-    def.type = 'dynamic';
+    def.type = "dynamic";
     return this.createBody(def);
   }
 
   createKinematicBody(def?: BodyDef): Body;
-  createKinematicBody(position: Vec2, angle?: number): Body;
+  createKinematicBody(position: Vec2Value, angle?: number): Body;
   // tslint:disable-next-line:typedef
   createKinematicBody(arg1?, arg2?) {
     let def: BodyDef = {};
     if (!arg1) {
     } else if (Vec2.isValid(arg1)) {
       def = { position : arg1, angle: arg2 };
-    } else if (typeof arg1 === 'object') {
+    } else if (typeof arg1 === "object") {
       def = arg1;
     }
-    def.type = 'kinematic';
+    def.type = "kinematic";
     return this.createBody(def);
   }
 
   /**
-   * Destroy a rigid body given a definition. No reference to the definition is
-   * retained.
+   * Destroy a body from the world.
    *
    * Warning: This automatically deletes all associated shapes and joints.
    *
-   * Warning: This function is locked during callbacks.
+   * Warning: This function is locked when a world simulation step is in progress. Use queueUpdate to schedule a function to be called after the step.
    */
   destroyBody(b: Body): boolean {
-    _ASSERT && common.assert(this.m_bodyCount > 0);
-    _ASSERT && common.assert(this.isLocked() == false);
+    if (_ASSERT) console.assert(this.m_bodyCount > 0);
+    if (_ASSERT) console.assert(this.isLocked() == false);
     if (this.isLocked()) {
       return;
     }
@@ -576,7 +594,7 @@ export default class World {
       const je0 = je;
       je = je.next;
 
-      this.publish('remove-joint', je0.joint);
+      this.publish("remove-joint", je0.joint);
       this.destroyJoint(je0.joint);
 
       b.m_jointList = je;
@@ -601,7 +619,7 @@ export default class World {
       const f0 = f;
       f = f.m_next;
 
-      this.publish('remove-fixture', f0);
+      this.publish("remove-fixture", f0);
       f0.destroyProxies(this.m_broadPhase);
 
       b.m_fixtureList = f;
@@ -625,7 +643,7 @@ export default class World {
 
     --this.m_bodyCount;
 
-    this.publish('remove-body', b);
+    this.publish("remove-body", b);
 
     return true;
   }
@@ -634,12 +652,12 @@ export default class World {
    * Create a joint to constrain bodies together. No reference to the definition
    * is retained. This may cause the connected bodies to cease colliding.
    *
-   * Warning: This function is locked during callbacks.
+   * Warning: This function is locked when a world simulation step is in progress. Use queueUpdate to schedule a function to be called after the step.
    */
   createJoint<T extends Joint>(joint: T): T | null {
-    _ASSERT && common.assert(!!joint.m_bodyA);
-    _ASSERT && common.assert(!!joint.m_bodyB);
-    _ASSERT && common.assert(this.isLocked() == false);
+    if (_ASSERT) console.assert(!!joint.m_bodyA);
+    if (_ASSERT) console.assert(!!joint.m_bodyB);
+    if (_ASSERT) console.assert(this.isLocked() == false);
     if (this.isLocked()) {
       return null;
     }
@@ -687,11 +705,14 @@ export default class World {
   }
 
   /**
-   * Destroy a joint. This may cause the connected bodies to begin colliding.
-   * Warning: This function is locked during callbacks.
+   * Destroy a joint.
+   * 
+   * Warning: This may cause the connected bodies to begin colliding.
+   * 
+   * Warning: This function is locked when a world simulation step is in progress. Use queueUpdate to schedule a function to be called after the step.
    */
   destroyJoint(joint: Joint): void {
-    _ASSERT && common.assert(this.isLocked() == false);
+    if (_ASSERT) console.assert(this.isLocked() == false);
     if (this.isLocked()) {
       return;
     }
@@ -749,7 +770,7 @@ export default class World {
     joint.m_edgeB.prev = null;
     joint.m_edgeB.next = null;
 
-    _ASSERT && common.assert(this.m_jointCount > 0);
+    if (_ASSERT) console.assert(this.m_jointCount > 0);
     --this.m_jointCount;
 
     // If the joint prevents collisions, then flag any contacts for filtering.
@@ -766,7 +787,7 @@ export default class World {
       }
     }
 
-    this.publish('remove-joint', joint);
+    this.publish("remove-joint", joint);
   }
 
   /** @internal */
@@ -781,7 +802,7 @@ export default class World {
    * @param timeStep Time step, this should not vary.
    */
   step(timeStep: number, velocityIterations?: number, positionIterations?: number): void {
-    this.publish('pre-step', timeStep);
+    this.publish("pre-step", timeStep);
 
     if ((velocityIterations | 0) !== velocityIterations) {
       // TODO: remove this in future
@@ -841,7 +862,23 @@ export default class World {
 
     this.m_locked = false;
 
-    this.publish('post-step', timeStep);
+    let callback: (world: World) => unknown;
+    while(callback = this.m_step_callback.shift()) {
+      callback(this);
+    }
+
+    this.publish("post-step", timeStep);
+  }
+
+  /**
+   * Queue a function to be called after ongoing simulation step. If no simulation is in progress call it immediately.
+   */
+  queueUpdate(callback: (world: World) => unknown): void {
+    if (!this.isLocked()) {
+      callback(this);
+    } else {
+      this.m_step_callback.push(callback);
+    }
   }
 
   /**
@@ -928,7 +965,7 @@ export default class World {
    */
   updateContacts(): void {
     // Update awake contacts.
-    let c;
+    let c: Contact;
     let next_c = this.m_contactList;
     while (c = next_c) {
       next_c = c.getNext();
@@ -978,12 +1015,8 @@ export default class World {
     }
   }
 
-  /**
-   * @internal
-   */
+  /** @internal */
   destroyContact(contact: Contact): void {
-    Contact.destroy(contact, this);
-
     // Remove from the world.
     if (contact.m_prev) {
       contact.m_prev.m_next = contact.m_next;
@@ -994,6 +1027,8 @@ export default class World {
     if (contact == this.m_contactList) {
       this.m_contactList = contact.m_next;
     }
+
+    Contact.destroy(contact, this);
 
     --this.m_contactCount;
   }
@@ -1012,7 +1047,7 @@ export default class World {
    *
    * Warning: You cannot create/destroy world entities inside these callbacks.
    */
-  on(name: 'begin-contact', listener: (contact: Contact) => void): World;
+  on(name: "begin-contact", listener: (contact: Contact) => void): World;
   /**
    * Called when two fixtures cease to touch.
    *
@@ -1026,7 +1061,7 @@ export default class World {
    *
    * Warning: You cannot create/destroy world entities inside these callbacks.
    */
-  on(name: 'end-contact', listener: (contact: Contact) => void): World;
+  on(name: "end-contact", listener: (contact: Contact) => void): World;
   /**
    * This is called after a contact is updated. This allows you to inspect a
    * contact before it goes to the solver. If you are careful, you can modify the
@@ -1034,12 +1069,12 @@ export default class World {
    * provided so that you can detect changes. Note: this is called only for awake
    * bodies. Note: this is called even when the number of contact points is zero.
    * Note: this is not called for sensors. Note: if you set the number of contact
-   * points to zero, you will not get an endContact callback. However, you may get
-   * a beginContact callback the next step.
+   * points to zero, you will not get an end-contact callback. However, you may get
+   * a begin-contact callback the next step.
    *
    * Warning: You cannot create/destroy world entities inside these callbacks.
    */
-  on(name: 'pre-solve', listener: (contact: Contact, oldManifold: Manifold) => void): World;
+  on(name: "pre-solve", listener: (contact: Contact, oldManifold: Manifold) => void): World;
   /**
    * This lets you inspect a contact after the solver is finished. This is useful
    * for inspecting impulses. Note: the contact manifold does not include time of
@@ -1049,19 +1084,19 @@ export default class World {
    *
    * Warning: You cannot create/destroy world entities inside these callbacks.
    */
-  on(name: 'post-solve', listener: (contact: Contact, impulse: ContactImpulse) => void): World;
+  on(name: "post-solve", listener: (contact: Contact, impulse: ContactImpulse) => void): World;
   /** Listener is called whenever a body is removed. */
-  on(name: 'remove-body', listener: (body: Body) => void): World;
+  on(name: "remove-body", listener: (body: Body) => void): World;
   /** Listener is called whenever a joint is removed implicitly or explicitly. */
-  on(name: 'remove-joint', listener: (joint: Joint) => void): World;
+  on(name: "remove-joint", listener: (joint: Joint) => void): World;
   /** Listener is called whenever a fixture is removed implicitly or explicitly. */
-  on(name: 'remove-fixture', listener: (fixture: Fixture) => void): World;
+  on(name: "remove-fixture", listener: (fixture: Fixture) => void): World;
   /**
    * Register an event listener.
    */
   // tslint:disable-next-line:typedef
   on(name, listener) {
-    if (typeof name !== 'string' || typeof listener !== 'function') {
+    if (typeof name !== "string" || typeof listener !== "function") {
       return this;
     }
     if (!this._listeners) {
@@ -1074,19 +1109,19 @@ export default class World {
     return this;
   }
 
-  off(name: 'begin-contact', listener: (contact: Contact) => void): World;
-  off(name: 'end-contact', listener: (contact: Contact) => void): World;
-  off(name: 'pre-solve', listener: (contact: Contact, oldManifold: Manifold) => void): World;
-  off(name: 'post-solve', listener: (contact: Contact, impulse: ContactImpulse) => void): World;
-  off(name: 'remove-body', listener: (body: Body) => void): World;
-  off(name: 'remove-joint', listener: (joint: Joint) => void): World;
-  off(name: 'remove-fixture', listener: (fixture: Fixture) => void): World;
+  off(name: "begin-contact", listener: (contact: Contact) => void): World;
+  off(name: "end-contact", listener: (contact: Contact) => void): World;
+  off(name: "pre-solve", listener: (contact: Contact, oldManifold: Manifold) => void): World;
+  off(name: "post-solve", listener: (contact: Contact, impulse: ContactImpulse) => void): World;
+  off(name: "remove-body", listener: (body: Body) => void): World;
+  off(name: "remove-joint", listener: (joint: Joint) => void): World;
+  off(name: "remove-fixture", listener: (fixture: Fixture) => void): World;
   /**
    * Remove an event listener.
    */
   // tslint:disable-next-line:typedef
   off(name, listener) {
-    if (typeof name !== 'string' || typeof listener !== 'function') {
+    if (typeof name !== "string" || typeof listener !== "function") {
       return this;
     }
     const listeners = this._listeners && this._listeners[name];
@@ -1111,32 +1146,24 @@ export default class World {
     return listeners.length;
   }
 
-  /**
-   * @internal
-   */
+  /** @internal */
   beginContact(contact: Contact): void {
-    this.publish('begin-contact', contact);
+    this.publish("begin-contact", contact);
   }
 
-  /**
-   * @internal
-   */
+  /** @internal */
   endContact(contact: Contact): void {
-    this.publish('end-contact', contact);
+    this.publish("end-contact", contact);
   }
 
-  /**
-   * @internal
-   */
+  /** @internal */
   preSolve(contact: Contact, oldManifold: Manifold): void {
-    this.publish('pre-solve', contact, oldManifold);
+    this.publish("pre-solve", contact, oldManifold);
   }
 
-  /**
-   * @internal
-   */
+  /** @internal */
   postSolve(contact: Contact, impulse: ContactImpulse): void {
-    this.publish('post-solve', contact, impulse);
+    this.publish("post-solve", contact, impulse);
   }
 
   /**

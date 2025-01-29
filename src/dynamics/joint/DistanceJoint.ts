@@ -1,35 +1,26 @@
 /*
  * Planck.js
- * The MIT License
- * Copyright (c) 2021 Erin Catto, Ali Shakiba
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Copyright (c) Erin Catto, Ali Shakiba
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
  */
 
-import options from '../../util/options';
-import Settings from '../../Settings';
-import Math from '../../common/Math';
-import Vec2 from '../../common/Vec2';
-import Rot from '../../common/Rot';
-import Joint, { JointOpt, JointDef } from '../Joint';
-import Body from '../Body';
+import { options } from "../../util/options";
+import { SettingsInternal as Settings } from "../../Settings";
+import { clamp } from "../../common/Math";
+import { Vec2, Vec2Value } from "../../common/Vec2";
+import { Rot } from "../../common/Rot";
+import { Joint, JointOpt, JointDef } from "../Joint";
+import { Body } from "../Body";
 import { TimeStep } from "../Solver";
+
+
+/** @internal */ const _CONSTRUCTOR_FACTORY = typeof CONSTRUCTOR_FACTORY === "undefined" ? false : CONSTRUCTOR_FACTORY;
+/** @internal */ const math_abs = Math.abs;
+/** @internal */ const math_PI = Math.PI;
+
 
 /**
  * Distance joint definition. This requires defining an anchor point on both
@@ -63,27 +54,37 @@ export interface DistanceJointDef extends JointDef, DistanceJointOpt {
   /**
    * The local anchor point relative to bodyA's origin.
    */
-  localAnchorA: Vec2;
+  localAnchorA: Vec2Value;
   /**
    * The local anchor point relative to bodyB's origin.
    */
-  localAnchorB: Vec2;
+  localAnchorB: Vec2Value;
+
+  /** @internal */ anchorA?: Vec2Value;
+  /** @internal */ anchorB?: Vec2Value;
 }
 
-const DEFAULTS = {
+/** @internal */ const DEFAULTS = {
   frequencyHz : 0.0,
   dampingRatio : 0.0
 };
 
+declare module "./DistanceJoint" {
+  /** @hidden @deprecated Use new keyword. */
+  // @ts-expect-error
+  function DistanceJoint(def: DistanceJointDef): DistanceJoint;
+  /** @hidden @deprecated Use new keyword. */
+  // @ts-expect-error
+  function DistanceJoint(def: DistanceJointOpt, bodyA: Body, bodyB: Body, anchorA: Vec2Value, anchorB: Vec2Value): DistanceJoint;
+}
+
 /**
  * A distance joint constrains two points on two bodies to remain at a fixed
  * distance from each other. You can view this as a massless, rigid rod.
- *
- * @param anchorA Anchor A in global coordination.
- * @param anchorB Anchor B in global coordination.
  */
-export default class DistanceJoint extends Joint {
-  static TYPE = 'distance-joint' as const;
+// @ts-expect-error
+export class DistanceJoint extends Joint {
+  static TYPE = "distance-joint" as const;
 
   // Solver shared
   /** @internal */ m_localAnchorA: Vec2;
@@ -107,16 +108,23 @@ export default class DistanceJoint extends Joint {
   /** @internal */ m_invIB: number;
   /** @internal */ m_mass: number;
 
+  /**
+   * @param def DistanceJoint definition.
+   */
   constructor(def: DistanceJointDef);
-  constructor(def: DistanceJointOpt, bodyA: Body, bodyB: Body, anchorA: Vec2, anchorB: Vec2);
-  constructor(def: DistanceJointDef, bodyA?: Body, bodyB?: Body, anchorA?: Vec2, anchorB?: Vec2) {
+  /**
+   * @param anchorA Anchor A in global coordination.
+   * @param anchorB Anchor B in global coordination.
+   */
+  constructor(def: DistanceJointOpt, bodyA: Body, bodyB: Body, anchorA?: Vec2Value, anchorB?: Vec2Value);
+  constructor(def: DistanceJointDef, bodyA?: Body, bodyB?: Body, anchorA?: Vec2Value, anchorB?: Vec2Value) {
     // @ts-ignore
-    if (!(this instanceof DistanceJoint)) {
+    if (_CONSTRUCTOR_FACTORY && !(this instanceof DistanceJoint)) {
       return new DistanceJoint(def, bodyA, bodyB, anchorA, anchorB);
     }
 
     // order of constructor arguments is changed in v0.2
-    if (bodyB && anchorA && ('m_type' in anchorA) && ('x' in bodyB) && ('y' in bodyB)) {
+    if (bodyB && anchorA && ("m_type" in anchorA) && ("x" in bodyB) && ("y" in bodyB)) {
       const temp = bodyB;
       bodyB = anchorA as any as Body;
       anchorA = temp as any as Vec2;
@@ -132,7 +140,7 @@ export default class DistanceJoint extends Joint {
     // Solver shared
     this.m_localAnchorA = Vec2.clone(anchorA ? bodyA.getLocalPoint(anchorA) : def.localAnchorA || Vec2.zero());
     this.m_localAnchorB = Vec2.clone(anchorB ? bodyB.getLocalPoint(anchorB) : def.localAnchorB || Vec2.zero());
-    this.m_length = Math.isFinite(def.length) ? def.length :
+    this.m_length = Number.isFinite(def.length) ? def.length :
       Vec2.distance(bodyA.getWorldPoint(this.m_localAnchorA), bodyB.getWorldPoint(this.m_localAnchorB));
     this.m_frequencyHz = def.frequencyHz;
     this.m_dampingRatio = def.dampingRatio;
@@ -186,14 +194,8 @@ export default class DistanceJoint extends Joint {
     return joint;
   }
 
-  /** @internal */
-  _setAnchors(def: {
-    anchorA?: Vec2,
-    localAnchorA?: Vec2,
-    anchorB?: Vec2,
-    localAnchorB?: Vec2,
-    length?: number,
-  }): void {
+  /** @hidden */
+  _reset(def: Partial<DistanceJointDef>): void {
     if (def.anchorA) {
       this.m_localAnchorA.setVec2(this.m_bodyA.getLocalPoint(def.anchorA));
     } else if (def.localAnchorA) {
@@ -214,6 +216,12 @@ export default class DistanceJoint extends Joint {
           this.m_bodyA.getWorldPoint(this.m_localAnchorA),
           this.m_bodyB.getWorldPoint(this.m_localAnchorB)
       );
+    }
+    if (Number.isFinite(def.frequencyHz)) {
+      this.m_frequencyHz = def.frequencyHz;
+    }
+    if (Number.isFinite(def.dampingRatio)) {
+      this.m_dampingRatio = def.dampingRatio;
     }
   }
 
@@ -325,8 +333,7 @@ export default class DistanceJoint extends Joint {
 
     const crAu = Vec2.crossVec2Vec2(this.m_rA, this.m_u);
     const crBu = Vec2.crossVec2Vec2(this.m_rB, this.m_u);
-    let invMass = this.m_invMassA + this.m_invIA * crAu * crAu + this.m_invMassB
-        + this.m_invIB * crBu * crBu;
+    let invMass = this.m_invMassA + this.m_invIA * crAu * crAu + this.m_invMassB + this.m_invIB * crBu * crBu;
 
     // Compute the effective mass matrix.
     this.m_mass = invMass != 0.0 ? 1.0 / invMass : 0.0;
@@ -335,7 +342,7 @@ export default class DistanceJoint extends Joint {
       const C = length - this.m_length;
 
       // Frequency
-      const omega = 2.0 * Math.PI * this.m_frequencyHz;
+      const omega = 2.0 * math_PI * this.m_frequencyHz;
 
       // Damping coefficient
       const d = 2.0 * this.m_mass * this.m_dampingRatio * omega;
@@ -389,8 +396,7 @@ export default class DistanceJoint extends Joint {
     const vpB = Vec2.add(vB, Vec2.crossNumVec2(wB, this.m_rB));
     const Cdot = Vec2.dot(this.m_u, vpB) - Vec2.dot(this.m_u, vpA);
 
-    const impulse = -this.m_mass
-        * (Cdot + this.m_bias + this.m_gamma * this.m_impulse);
+    const impulse = -this.m_mass * (Cdot + this.m_bias + this.m_gamma * this.m_impulse);
     this.m_impulse += impulse;
 
     const P = Vec2.mulNumVec2(impulse, this.m_u);
@@ -427,9 +433,7 @@ export default class DistanceJoint extends Joint {
     const u = Vec2.sub(Vec2.add(cB, rB), Vec2.add(cA, rA));
 
     const length = u.normalize();
-    let C = length - this.m_length;
-    C = Math
-        .clamp(C, -Settings.maxLinearCorrection, Settings.maxLinearCorrection);
+    const C = clamp(length - this.m_length, -Settings.maxLinearCorrection, Settings.maxLinearCorrection);
 
     const impulse = -this.m_mass * C;
     const P = Vec2.mulNumVec2(impulse, u);
@@ -444,7 +448,7 @@ export default class DistanceJoint extends Joint {
     this.m_bodyB.c_position.c.setVec2(cB);
     this.m_bodyB.c_position.a = aB;
 
-    return Math.abs(C) < Settings.linearSlop;
+    return math_abs(C) < Settings.linearSlop;
   }
 
 }

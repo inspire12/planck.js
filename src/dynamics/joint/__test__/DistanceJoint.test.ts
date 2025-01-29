@@ -1,29 +1,29 @@
-import { expect } from 'chai';
+import { describe, it, expect } from "vitest";
 
-import Vec2 from '../../../common/Vec2';
-import Circle from '../../../collision/shape/CircleShape';
-import Box from '../../../collision/shape/BoxShape';
-import World from '../../World';
+import { Vec2 } from "../../../common/Vec2";
+import { CircleShape } from "../../../collision/shape/CircleShape";
+import { BoxShape } from "../../../collision/shape/BoxShape";
+import { World } from "../../World";
 
-import DistanceJoint from '../DistanceJoint';
+import { DistanceJoint } from "../DistanceJoint";
 
-describe('DistanceJoint', function(): void {
+describe("DistanceJoint", function(): void {
 
-  it('calculates local anchors from global', function(): void {
+  it("calculates local anchors from global", function(): void {
     var world = new World();
 
-    var circle = new Circle(1);
-    var box = new Box(1, 1);
+    var circle = new CircleShape(1);
+    var box = new BoxShape(1, 1);
 
     var b1 = world.createBody({
       position : new Vec2(0, 0),
-      type : 'dynamic'
+      type : "dynamic"
     });
     b1.createFixture(circle);
 
     var b2 = world.createBody({
       position : new Vec2(10, 0),
-      type : 'dynamic'
+      type : "dynamic"
     });
     b2.createFixture(box);
 
@@ -38,21 +38,21 @@ describe('DistanceJoint', function(): void {
 
   });
 
-  it('moves attached body', function(): void {
+  it("moves attached body", function(): void {
     var world = new World();
 
-    var circle = new Circle(1);
-    var box = new Box(1, 1);
+    var circle = new CircleShape(1);
+    var box = new BoxShape(1, 1);
 
     var b1 = world.createBody({
       position : new Vec2(0, 0),
-      type : 'dynamic'
+      type : "dynamic"
     });
     b1.createFixture(circle);
 
     var b2 = world.createBody({
       position : new Vec2(10, 0),
-      type : 'dynamic'
+      type : "dynamic"
     });
     b2.createFixture(box);
 

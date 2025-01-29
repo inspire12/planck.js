@@ -1,33 +1,18 @@
 /*
  * Planck.js
- * The MIT License
- * Copyright (c) 2021 Erin Catto, Ali Shakiba
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Copyright (c) Erin Catto, Ali Shakiba
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
  */
 
-import common from '../util/common';
-import type Vec2 from '../common/Vec2';
-import type Body from './Body';
+import type { Vec2, Vec2Value }  from "../common/Vec2";
+import type { Body }  from "./Body";
 import { TimeStep } from "./Solver";
+import { Style } from "../util/Testbed";
 
-const _ASSERT = typeof ASSERT === 'undefined' ? false : ASSERT;
+/** @internal */ const _ASSERT = typeof ASSERT === "undefined" ? false : ASSERT;
 
 /**
  * A joint edge is used to connect bodies and joints together in a joint graph
@@ -67,7 +52,11 @@ export interface JointOpt {
    * should collide.
    */
   collideConnected?: boolean;
+
+  /** Styling for dev-tools. */
+  style?: Style;
 }
+
 /**
  * Joint definitions are used to construct joints.
  */
@@ -82,7 +71,7 @@ export interface JointDef extends JointOpt {
   bodyB: Body;
 }
 
-const DEFAULTS = {
+/** @internal */ const DEFAULTS = {
   userData : null,
   collideConnected : false
 };
@@ -91,9 +80,9 @@ const DEFAULTS = {
  * The base joint class. Joints are used to constraint two bodies together in
  * various fashions. Some joints also feature limits and motors.
  */
-export default abstract class Joint {
+export abstract class Joint {
 
-  /** @internal */ m_type: string = 'unknown-joint';
+  /** @internal */ m_type: string = "unknown-joint";
 
   /** @internal */ m_bodyA: Body;
   /** @internal */ m_bodyB: Body;
@@ -109,21 +98,31 @@ export default abstract class Joint {
   /** @internal */ m_islandFlag: boolean = false;
   /** @internal */ m_userData: unknown;
 
+  /** Styling for dev-tools. */
+  style: Style = {};
+
+  /** @hidden @experimental Similar to userData, but used by dev-tools or runtime environment. */
+  appData: Record<string, any> = {};
+
   constructor(def: JointDef);
   constructor(def: JointOpt, bodyA: Body, bodyB: Body);
   constructor(def: JointDef | JointOpt, bodyA?: Body, bodyB?: Body) {
-    bodyA = 'bodyA' in def ? def.bodyA : bodyA;
-    bodyB = 'bodyB' in def ? def.bodyB : bodyB;
+    bodyA = "bodyA" in def ? def.bodyA : bodyA;
+    bodyB = "bodyB" in def ? def.bodyB : bodyB;
 
-    _ASSERT && common.assert(!!bodyA);
-    _ASSERT && common.assert(!!bodyB);
-    _ASSERT && common.assert(bodyA != bodyB);
+    if (_ASSERT) console.assert(!!bodyA);
+    if (_ASSERT) console.assert(!!bodyB);
+    if (_ASSERT) console.assert(bodyA != bodyB);
 
     this.m_bodyA = bodyA!;
     this.m_bodyB = bodyB!;
 
     this.m_collideConnected = !!def.collideConnected;
     this.m_userData = def.userData;
+
+    if (typeof def.style === "object" && def.style !== null) {
+      this.style = def.style;
+    }
   }
 
   /**
@@ -201,7 +200,7 @@ export default abstract class Joint {
   /**
    * Shift the origin for any points stored in world coordinates.
    */
-  shiftOrigin(newOrigin: Vec2): void {}
+  shiftOrigin(newOrigin: Vec2Value): void {}
 
   abstract initVelocityConstraints(step: TimeStep): void;
 
@@ -212,4 +211,17 @@ export default abstract class Joint {
    */
   abstract solvePositionConstraints(step: TimeStep): boolean;
 
+  /**
+   * @hidden @experimental
+   * Update joint with new props.
+   */
+  abstract _reset(def: Partial<JointDef>): void;
+
+  /**
+   * @internal @deprecated
+   * Temporary for backward compatibility, will be removed.
+   */
+  _resetAnchors(def: any): void {
+    return this._reset(def);
+  }
 }

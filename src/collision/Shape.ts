@@ -1,57 +1,53 @@
 /*
  * Planck.js
- * The MIT License
- * Copyright (c) 2021 Erin Catto, Ali Shakiba
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Copyright (c) Erin Catto, Ali Shakiba
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
  */
 
-import type { MassData } from '../dynamics/Body';
-import AABB, { RayCastOutput, RayCastInput } from './AABB';
-import { DistanceProxy } from './Distance';
-import type Transform from '../common/Transform';
-import type Vec2 from '../common/Vec2';
+import type { MassData } from "../dynamics/Body";
+import { RayCastOutput, RayCastInput, AABBValue } from "./AABB";
+import { DistanceProxy } from "./Distance";
+import type { Transform, TransformValue }  from "../common/Transform";
+import type { Vec2Value }  from "../common/Vec2";
+import { Style } from "../util/Testbed";
 
+// todo make shape an interface
 
 /**
  * A shape is used for collision detection. You can create a shape however you
  * like. Shapes used for simulation in World are created automatically when a
  * Fixture is created. Shapes may encapsulate one or more child shapes.
  */
-export default abstract class Shape {
-  m_type: ShapeType;
+export abstract class Shape {
+  /** @hidden */ m_type: ShapeType;
+
+  /**
+   * @hidden
+   * Radius of a shape. For polygonal shapes this must be b2_polygonRadius.
+   * There is no support for making rounded polygons.
+   */
   m_radius: number;
 
-  /** @internal */
-  _reset(): void {
-  }
+  /** Styling for dev-tools. */
+  style: Style = {};
+
+  /** @hidden @experimental Similar to userData, but used by dev-tools or runtime environment. */
+  appData: Record<string, any> = {};
+
+  /** @hidden */
+  abstract _reset(): void;
 
   static isValid(obj: any): boolean {
-    if (obj === null || typeof obj === 'undefined') {
+    if (obj === null || typeof obj === "undefined") {
       return false;
     }
-    return typeof obj.m_type === 'string' && typeof obj.m_radius === 'number';
+    return typeof obj.m_type === "string" && typeof obj.m_radius === "number";
   }
 
-  getRadius(): number {
-    return this.m_radius;
-  }
+  abstract getRadius(): number;
 
   /**
    * Get the type of this shape. You can use this to down cast to the concrete
@@ -59,13 +55,10 @@ export default abstract class Shape {
    *
    * @return the shape type.
    */
-  getType(): ShapeType {
-    return this.m_type;
-  }
+  abstract getType(): ShapeType;
 
   /**
-   * @internal
-   * @deprecated Shapes should be treated as immutable.
+   * @internal @deprecated Shapes should be treated as immutable.
    *
    * clone the concrete shape.
    */
@@ -83,7 +76,7 @@ export default abstract class Shape {
    * @param xf The shape world transform.
    * @param p A point in world coordinates.
    */
-  abstract testPoint(xf: Transform, p: Vec2): boolean;
+  abstract testPoint(xf: TransformValue, p: Vec2Value): boolean;
 
   /**
    * Cast a ray against a child shape.
@@ -103,7 +96,7 @@ export default abstract class Shape {
    * @param xf The world transform of the shape.
    * @param childIndex The child shape
    */
-  abstract computeAABB(aabb: AABB, xf: Transform, childIndex: number): void;
+  abstract computeAABB(aabb: AABBValue, xf: TransformValue, childIndex: number): void;
 
   /**
    * Compute the mass properties of this shape using its dimensions and density.
